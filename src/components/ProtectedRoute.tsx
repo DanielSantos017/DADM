@@ -13,6 +13,7 @@ const routeRoles: Record<string, UserRole[]> = {
   "/historico-pedidos": boardRoles,
   "/members": boardRoles,
   "/configuracoes": ["tesoureiro"],
+  "/colegiado": ["tesoureiro"],
   "/mcp": [...boardRoles, "adm_area"],
   "/projetos": projectRoles,
   "/reembolsos": boardRoles,

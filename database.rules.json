@@ -29,7 +29,13 @@
     },
     "projects": {
       ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area' || root.child('roles').child(auth.uid).child('role').val() === 'usuario_area')",
-      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')"
+      "$id": {
+        ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area') && newData.child('projectionBaselineCents').val() === data.child('projectionBaselineCents').val() && newData.child('lastReopenedAt').val() === data.child('lastReopenedAt').val() && newData.child('lastReopenedBy').val() === data.child('lastReopenedBy').val() && newData.child('lastReopenReason').val() === data.child('lastReopenReason').val() && ((!data.exists() && newData.child('status').val() === 'Aberto') || (data.exists() && data.child('status').val() !== 'Processado' && (newData.exists() ? (newData.child('status').val() === data.child('status').val() || (data.child('status').val() === 'Aberto' && newData.child('status').val() === 'Pendente_Aprovacao') || (data.child('status').val() === 'Pendente_Aprovacao' && newData.child('status').val() === 'Aberto')) : !data.child('lastReopenedAt').exists() && root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro')))"
+      }
+    },
+    "project_reopen_history": {
+      ".read": false,
+      ".write": false
     },
     "mcp_batches": {
       ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')",
@@ -68,6 +74,10 @@
       ".write": false
     },
     "governance_policy": {
+      ".read": false,
+      ".write": false
+    },
+    "governance_membership_audit": {
       ".read": false,
       ".write": false
     },

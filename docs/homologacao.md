@@ -9,7 +9,7 @@ Esta branch é adequada para **testes isolados**, não para movimentações fina
 3. Configure Turnstile para o **hostname de homologação**. Sem `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` e `PUBLIC_FORM_RATE_SECRET`, o formulário público responderá 503 por segurança.
 4. Instale as regras de `database.rules.json` e `storage.rules` **somente no projeto de homologação**. O deploy da aplicação não publica essas regras automaticamente.
 5. Crie o primeiro perfil `roles/<firebase-auth-uid>` com `email` e `role: "tesoureiro"` por uma credencial administrativa do projeto. O app não oferece autopromoção. Os demais usuários entram como `pendente` e são aprovados pela Tesouraria.
-6. Não cadastre `governance_policy` com membros ou quóruns fictícios. Solicitações colegiadas ficam pendentes até a Tesouraria fornecer UIDs, quóruns e versão da política.
+6. O tesoureiro pode nomear usuários ativos para o Colegiado da Tesouraria na aba `/colegiado`. Não cadastre `governance_policy` com quóruns fictícios: solicitações colegiadas ficam pendentes até a Tesouraria definir quóruns e composição do Conselho Administrativo.
 
 ## Verificações antes do teste de usuários
 
@@ -19,7 +19,8 @@ Esta branch é adequada para **testes isolados**, não para movimentações fina
 - Receita manual somente com tesoureiro; despesa manual somente com autorização aprovada e suficiente; reutilizar o protocolo deve retornar 409.
 - Upload de documento PDF/PNG/JPG de até 5 MB é opcional no Caixa, e download só funciona para tesoureiro/coordenador autenticado.
 - Reembolso público só é aprovado com autorização anterior ao gasto ou exceção aprovada. Confirmar o pagamento lança no Caixa uma única vez.
-- Conferir a reserva usando exemplo de R$ 100,00 brutos, R$ 3,00 de taxas e R$ 7,00 de estornos: líquido de R$ 90,00, reserva de R$ 18,00. Nenhum Pix ou split bancário é executado pelo app.
+- Conferir a reserva usando exemplo de R$ 100,00 brutos, R$ 3,00 de taxas e R$ 7,00 de estornos: líquido de R$ 90,00, reserva de R$ 18,00. Integração bancária está fora do escopo; nenhum Pix ou split bancário é executado pelo app.
+- Conferir o painel: Caixa fechado mais saldo líquido de projetos abertos/pendentes deve ser exibido como projeção, sem criar lançamentos no Caixa. Reabrir projeto fechado deve exigir tesoureiro e justificativa; se houve fechamento no Caixa, a projeção deve considerar somente a variação posterior.
 
 ## Restrições deliberadas
 

@@ -17,6 +17,7 @@ before(async () => {
     await set(ref(database, "roles/member"), { email: "member@example.com", role: "usuario" });
     await set(ref(database, "reimbursements/abc12345"), { status: "pendente", source: "public" });
     await set(ref(database, "reimbursements/legacy123"), { status: "pendente", amount: 10 });
+    await set(ref(database, "projects/closed123"), { name: "Projeto fechado", status: "Processado" });
     await set(ref(database, "reimbursement_private/abc12345"), { pixKey: "private-key" });
   });
 });
@@ -48,6 +49,7 @@ test("tesouraria lê pedidos, mas não acessa dados privados pelo SDK do navegad
   await assertFails(set(ref(database, "reimbursements/legacy123/status"), "aprovado"));
   await assertFails(set(ref(database, "reimbursements/legacy123"), null));
   await assertFails(set(ref(database, "transactions/unsafe123"), { type: "expense", amount: 100 }));
+  await assertFails(set(ref(database, "projects/closed123/status"), "Aberto"));
 });
 
 test("usuário novo só pode criar um perfil pendente para si", async () => {
@@ -61,6 +63,7 @@ test("solicitações e política de governança só passam pelas rotas do servid
   await assertFails(get(ref(database, "governance_requests")));
   await assertFails(set(ref(database, "governance_requests/test12345"), { status: "approved" }));
   await assertFails(set(ref(database, "governance_policy"), { treasury: { quorum: 1 } }));
+  await assertFails(set(ref(database, "governance_membership_audit/test12345"), { action: "add" }));
   await assertFails(set(ref(database, "reserve_account/reserveBalanceCents"), 999999));
   await assertFails(set(ref(database, "authorization_usage/test12345"), { targetId: "unsafe" }));
 });

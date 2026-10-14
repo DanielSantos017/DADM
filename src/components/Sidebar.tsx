@@ -47,6 +47,7 @@ function groupsForRole(role: UserRole): NavigationGroup[] {
     ] },
     { label: "Administração", items: [
       { label: "Membros", href: "/members", icon: Users },
+      ...(role === "tesoureiro" ? [{ label: "Colegiado", href: "/colegiado", icon: Users }] : []),
       ...(role === "tesoureiro" ? [{ label: "Configurações", href: "/configuracoes", icon: Settings }] : []),
     ] },
   ];

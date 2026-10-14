@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/reimbursement-validation.test.mjs tests/compliance.test.mjs tests/governance.test.mjs",
+    "test": "node --test tests/reimbursement-validation.test.mjs tests/compliance.test.mjs tests/governance.test.mjs tests/project-projection.test.mjs",
     "test:rules": "firebase emulators:exec --only database --project demo-dadm-rules \"node --test tests/database-rules.test.mjs\""
   },
   "dependencies": {

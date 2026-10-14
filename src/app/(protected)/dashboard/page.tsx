@@ -5,6 +5,7 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { useInventory } from "@/hooks/useInventory";
 import { useProjects } from "@/hooks/useProjects";
 import { useReimbursements } from "@/hooks/useReimbursements";
+import { cashBalanceCents, projectTotalsCents } from "@/lib/project-projection";
 
 export default function DashboardPage() {
   const [openedAt] = useState(() => Date.now());
@@ -60,6 +61,12 @@ export default function DashboardPage() {
   const pendingProjects = projects.filter((project) => project.status === "Pendente_Aprovacao").length;
   const pendingReimbursements = reimbursements.filter((item) => item.status === "pendente" || item.status === "em_analise").length;
   const readyForPayment = reimbursements.filter((item) => item.source === "public" && item.status === "aprovado").length;
+  const closedCashCents = cashBalanceCents(transactions);
+  const activeProjects = projects.filter((project) => project.status !== "Processado").map((project) => ({
+    ...project, totals: projectTotalsCents(project),
+  }));
+  const projectContributionCents = activeProjects.reduce((sum, project) => sum + project.totals.contributionCents, 0);
+  const projectedBalanceCents = closedCashCents + projectContributionCents;
 
   return (
     <div className="space-y-8 pb-12">
@@ -76,6 +83,21 @@ export default function DashboardPage() {
               <span className="text-3xl font-semibold tabular-nums">{item.count}</span>
             </Link>
           ))}
+        </div>
+      </section>
+      <section aria-labelledby="projection-heading" className="space-y-4">
+        <div>
+          <h2 id="projection-heading" className="text-xl font-semibold text-gray-900 dark:text-white">Caixa e projetos em andamento</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">A projeção soma ganhos e desconta gastos dos projetos abertos ou pendentes. Ela não altera os lançamentos do Caixa.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-zinc-700 dark:bg-[#1e2023]"><p className="text-sm text-gray-600 dark:text-gray-300">Saldo do Caixa fechado</p><p className="mt-2 text-2xl font-semibold tabular-nums">{formatCurrency(closedCashCents / 100)}</p></div>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-zinc-700 dark:bg-[#1e2023]"><p className="text-sm text-gray-600 dark:text-gray-300">Impacto dos projetos em andamento</p><p className={`mt-2 text-2xl font-semibold tabular-nums ${projectContributionCents < 0 ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>{formatCurrency(projectContributionCents / 100)}</p></div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 dark:border-indigo-900 dark:bg-indigo-950/30"><p className="text-sm text-indigo-900 dark:text-indigo-200">Saldo projetado — não contábil</p><p className="mt-2 text-2xl font-semibold tabular-nums text-indigo-950 dark:text-indigo-100">{formatCurrency(projectedBalanceCents / 100)}</p></div>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-zinc-700 dark:bg-[#1e2023]">
+          <div className="flex items-center justify-between gap-3"><h3 className="font-medium">Projetos incluídos na projeção ({activeProjects.length})</h3><Link href="/projetos" className="text-sm text-indigo-700 underline dark:text-indigo-300">Ver projetos</Link></div>
+          {activeProjects.length === 0 ? <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">Nenhum projeto aberto ou pendente.</p> : <ul className="mt-3 divide-y divide-gray-200 text-sm dark:divide-zinc-700">{activeProjects.map((project) => <li key={project.id} className="flex flex-wrap items-center justify-between gap-2 py-3"><span className="min-w-0"><strong className="block break-words">{project.name}</strong><span className="text-xs text-gray-600 dark:text-gray-300">{project.status === "Aberto" ? "Aberto" : "Pendente de aprovação"} · ganhos {formatCurrency(project.totals.incomeCents / 100)} · gastos {formatCurrency(project.totals.expenseCents / 100)}{project.projectionBaselineCents ? " · descontado valor já lançado no Caixa" : ""}</span></span><span className={`font-semibold tabular-nums ${project.totals.contributionCents < 0 ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>{formatCurrency(project.totals.contributionCents / 100)}</span></li>)}</ul>}
         </div>
       </section>
       {/* First Row of Charts */}

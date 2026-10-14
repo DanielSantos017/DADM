@@ -19,6 +19,10 @@ export interface Project {
   entries: Record<string, ProjectEntry>;
   createdAt: number;
   createdByEmail: string;
+  projectionBaselineCents?: number;
+  lastReopenedAt?: number;
+  lastReopenedBy?: string;
+  lastReopenReason?: string;
 }
 
 export function useProjects() {

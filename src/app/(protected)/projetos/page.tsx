@@ -17,6 +17,8 @@ export default function ProjetosPage() {
   const [newEntryDesc, setNewEntryDesc] = useState("");
   const [newEntryAmount, setNewEntryAmount] = useState("");
   const [newEntryType, setNewEntryType] = useState<"income" | "expense">("expense");
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [reopenMessage, setReopenMessage] = useState("");
 
   const canCreateAndProcess = role === 'adm_area' || role === 'tesoureiro' || role === 'coordenador';
 
@@ -56,6 +58,28 @@ export default function ProjetosPage() {
     setSelectedProjectId(null); // Fecha o modal
   };
 
+  const handleReopenProject = async (projectId: string) => {
+    if (role !== "tesoureiro" || !user) return;
+    const reason = prompt("Justificativa da reabertura (mínimo 10 caracteres):");
+    if (!reason) return;
+    setReopenBusy(true);
+    setReopenMessage("");
+    try {
+      const response = await fetch(`/api/projetos/${encodeURIComponent(projectId)}/reabrir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Não foi possível reabrir o projeto.");
+      setReopenMessage("Projeto reaberto. A projeção do painel descontará valores já registrados no Caixa.");
+    } catch (error) {
+      setReopenMessage(error instanceof Error ? error.message : "Falha na reabertura.");
+    } finally {
+      setReopenBusy(false);
+    }
+  };
+
   if (loading) return <div className="p-6">Carregando projetos...</div>;
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -89,6 +113,7 @@ export default function ProjetosPage() {
           </button>
         )}
       </div>
+      {reopenMessage && <p role="status" className="rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">{reopenMessage}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map(project => {
@@ -171,7 +196,11 @@ export default function ProjetosPage() {
                           <PlayCircle className="w-4 h-4" /> Processar e Fechar
                         </button>
                       )}
-                      {(role === 'tesoureiro' || role === 'coordenador') && (
+                      {role === "tesoureiro" && selectedProject.status === "Processado" && <button
+                        type="button" disabled={reopenBusy} onClick={() => void handleReopenProject(selectedProject.id)}
+                        className="rounded-lg bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-900 disabled:opacity-50 dark:bg-amber-900/30 dark:text-amber-200"
+                      >{reopenBusy ? "Reabrindo..." : "Reabrir projeto"}</button>}
+                      {(role === 'tesoureiro' || role === 'coordenador') && selectedProject.status !== "Processado" && !selectedProject.lastReopenedAt && (
                         <button 
                           onClick={async () => {
                             if (confirm("Tem certeza que deseja excluir ESTE PROJETO INTEIRO e todos os seus lançamentos? Esta ação não pode ser desfeita.")) {
@@ -187,6 +216,7 @@ export default function ProjetosPage() {
                     </div>
                   </div>
                 </DialogHeader>
+                {selectedProject.lastReopenedAt && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Reaberto por {selectedProject.lastReopenedBy} em {new Date(selectedProject.lastReopenedAt).toLocaleString("pt-BR")}. Motivo: {selectedProject.lastReopenReason}</p>}
 
                 <div className="grid grid-cols-3 gap-4 my-4">
                   <div className="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-lg border border-emerald-100 dark:border-emerald-900/30 text-center">
