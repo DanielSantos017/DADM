@@ -202,9 +202,10 @@ export default function ConfiguracoesPage() {
                           <div className="text-[10px] text-gray-400 dark:text-[#4c4e51] mt-0.5">{new Date(req.timestamp).toLocaleString('pt-BR')}</div>
                         </td>
                         <td className="px-6 py-4 flex gap-2 justify-end">
-                          <button onClick={() => { if(confirm("Confirmar a exclusão definitiva deste item do banco de dados?")) approveRequest(req); }} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors">
-                            <Trash2 className="w-3 h-3" /> Excluir Item
-                          </button>
+                          {req.collection === "caixa" ? <span className="max-w-48 text-xs text-amber-700 dark:text-amber-300">Caixa imutável: avaliar estorno auditável. A exclusão está bloqueada.</span> :
+                            <button onClick={() => { if(confirm("Confirmar a exclusão definitiva deste item do banco de dados?")) void approveRequest(req); }} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors">
+                              <Trash2 className="w-3 h-3" /> Excluir Item
+                            </button>}
                           <button onClick={() => removeRequest(req.id)} className="flex items-center gap-1 bg-gray-200 dark:bg-[#2a2c30] hover:bg-gray-300 dark:hover:bg-[#4c4e51] text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors">
                             Manter Item
                           </button>

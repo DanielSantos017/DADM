@@ -29,10 +29,6 @@ export default function MCPPage() {
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-  if (role !== 'tesoureiro' && role !== 'coordenador' && role !== 'adm_area') {
-    return <div className="p-8 text-center text-red-500 font-bold">Acesso negado. Apenas coordenadores e tesouraria.</div>;
-  }
-
   const handleCreateBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBatchName) return;
@@ -120,6 +116,10 @@ export default function MCPPage() {
   };
 
   const { winners, realCosts } = useMemo(() => calculateWinners(), [selectedBatch]);
+
+  if (role !== 'tesoureiro' && role !== 'coordenador' && role !== 'adm_area') {
+    return <div className="p-8 text-center text-red-500 font-bold">Acesso negado. Apenas coordenadores e tesouraria.</div>;
+  }
 
   return (
     <div className="space-y-6 pb-10">

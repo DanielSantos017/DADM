@@ -1,11 +1,13 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useProjects } from "@/hooks/useProjects";
 import { useCategories } from "@/hooks/useCategories";
 import { useDeleteRequests } from "@/hooks/useDeleteRequests";
-import { Plus, Trash2, Printer, ShieldAlert, ChevronDown, ChevronUp, FolderOpen, CheckCircle2, XCircle } from "lucide-react";
+import { TransactionDocument } from "@/components/TransactionDocument";
+import Link from "next/link";
+import { Plus, Printer, ShieldAlert, ChevronDown, ChevronUp, FolderOpen, XCircle } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -26,7 +28,7 @@ import { Label } from "@/components/ui/label";
 
 export default function CaixaPage() {
   const { role, user } = useAuth();
-  const { transactions, loading, addTransaction, deleteTransaction } = useTransactions();
+  const { transactions, loading, addTransaction } = useTransactions();
   const { categories, addCategory } = useCategories("caixa");
   const { createRequest } = useDeleteRequests();
   const { projects, updateProjectStatus } = useProjects();
@@ -44,38 +46,41 @@ export default function CaixaPage() {
     amount: 0,
     type: "income",
     category: "",
+    authorizationId: "",
   });
 
   const canEdit = role === "tesoureiro" || role === "coordenador";
-  const canDelete = role === "tesoureiro";
-
-  const handleApproveProject = async (project: any) => {
-    let income = 0;
-    let expense = 0;
-    Object.values(project.entries).forEach((e: any) => {
-      if (e.type === 'income') income += e.amount;
-      if (e.type === 'expense') expense += e.amount;
-    });
-    const profit = income - expense;
-
-    await addTransaction({
-      description: `Projeto/Evento: ${project.name}`,
-      amount: Math.abs(profit),
-      type: profit >= 0 ? "income" : "expense",
-      category: "Eventos e Projetos",
-      date: Date.now(),
-      createdByEmail: user?.email || "unknown@system",
-      createdAtIso: new Date().toISOString(),
-      timestamp: Date.now(),
-      isProject: true,
-      projectEntries: Object.values(project.entries)
-    });
-
-    await updateProjectStatus(project.id, "Processado");
-  };
-
   const handleRejectProject = async (projectId: string) => {
     await updateProjectStatus(projectId, "Aberto");
+  };
+
+  const handleTransactionDelete = async (tx: { id: string; description: string; amount: number }) => {
+    const reason = prompt("Justificativa para solicitar correção ou estorno deste lançamento (o histórico será preservado):");
+    if (!reason?.trim()) return;
+    await createRequest({
+      collection: "caixa",
+      itemId: tx.id,
+      itemNameOrDesc: `Caixa: ${tx.description} (${formatCurrency(tx.amount)}) - Motivo: ${reason.trim()}`,
+      requestedByEmail: user?.email || "unknown",
+    });
+    alert("Solicitação de correção registrada. O lançamento original permanece no histórico.");
+  };
+
+  const handleReversal = async (tx: { id: string; description: string }) => {
+    if (!user || role !== "tesoureiro") return;
+    const reason = prompt(`Justificativa do estorno de "${tx.description}" (mínimo 10 caracteres):`);
+    if (!reason) return;
+    try {
+      const response = await fetch(`/api/caixa/${encodeURIComponent(tx.id)}/estorno`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Não foi possível estornar.");
+      alert(`Estorno registrado: ${result.id}. O lançamento original foi preservado.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Falha ao estornar.");
+    }
   };
 
   const toggleProjectExpand = (txId: string) => {
@@ -89,20 +94,19 @@ export default function CaixaPage() {
       return;
     }
 
-    const timestamp = Date.now();
-    await addTransaction({
-      description: formData.description,
-      amount: Number(formData.amount),
-      type: formData.type as "income" | "expense",
-      category: formData.category,
-      date: timestamp,
-      createdByEmail: user?.email || "unknown@system",
-      createdAtIso: new Date(timestamp).toISOString(),
-      timestamp: timestamp,
-      metadata: { source: "web_app", version: "1.0" }
-    });
-    setIsOpen(false);
-    setFormData({ description: "", amount: 0, type: "income", category: "" });
+    try {
+      await addTransaction({
+        description: formData.description,
+        amount: Number(formData.amount),
+        type: formData.type as "income" | "expense",
+        category: formData.category,
+        ...(formData.type === "expense" ? { authorizationId: formData.authorizationId.trim() } : {}),
+      });
+      setIsOpen(false);
+      setFormData({ description: "", amount: 0, type: "income", category: "", authorizationId: "" });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível lançar no Caixa.");
+    }
   };
 
   const handleCategoryChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -184,18 +188,18 @@ export default function CaixaPage() {
                 const profit = income - expense;
 
                 return (
-                  <div key={project.id} className="bg-white dark:bg-[#1e2023] p-4 rounded-lg border border-amber-100 dark:border-amber-900/30 flex items-center justify-between">
+                  <div key={project.id} className="bg-white dark:bg-[#1e2023] p-4 rounded-lg border border-amber-100 dark:border-amber-900/30 flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <h3 className="font-bold text-gray-900 dark:text-white">{project.name}</h3>
                       <p className="text-xs text-gray-500">{project.description || "Sem descrição"}</p>
-                      <div className="flex gap-4 mt-2 text-xs font-bold">
+                      <div className="flex flex-wrap gap-2 mt-2 text-xs font-bold">
                         <span className="text-emerald-500">Ganhos: {formatCurrency(income)}</span>
                         <span className="text-rose-500">Gastos: {formatCurrency(expense)}</span>
                         <span className={profit >= 0 ? "text-blue-500" : "text-red-500"}>Saldo: {formatCurrency(profit)}</span>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleApproveProject(project)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 px-3 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/> Aprovar e Lançar</button>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href="/governanca" className="bg-amber-100 text-amber-800 px-3 py-2 rounded-lg text-sm font-bold">Conferir orçamento e autorizações</Link>
                       <button onClick={() => handleRejectProject(project.id)} className="bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 px-3 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-1"><XCircle className="w-4 h-4"/> Rejeitar</button>
                     </div>
                   </div>
@@ -217,7 +221,7 @@ export default function CaixaPage() {
                 <DialogTrigger className="flex items-center gap-2 bg-gray-900 dark:bg-[#2a2c30] hover:bg-gray-800 dark:hover:bg-[#4c4e51] text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm">
                   <Printer className="w-4 h-4" /> Relatório DRE
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[425px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
                   <DialogHeader>
                     <DialogTitle className="text-gray-900 dark:text-white font-medium">Gerar Relatório (DRE)</DialogTitle>
                   </DialogHeader>
@@ -243,7 +247,7 @@ export default function CaixaPage() {
                 <DialogTrigger className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm">
                   <Plus className="w-4 h-4" /> Novo Lançamento
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[425px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
                   <DialogHeader>
                     <DialogTitle className="text-gray-900 dark:text-white font-medium">Lançamento Manual</DialogTitle>
                   </DialogHeader>
@@ -288,6 +292,11 @@ export default function CaixaPage() {
                       <Label htmlFor="amount" className="text-gray-400 dark:text-[#4c4e51] font-bold text-[10px] uppercase tracking-wider">Valor (R$)</Label>
                       <Input id="amount" type="number" step="0.01" min="0.01" required value={formData.amount} onChange={e => setFormData({...formData, amount: Number(e.target.value)})} className="bg-gray-50 dark:bg-[#121315] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white focus-visible:ring-[#4c4e51]" />
                     </div>
+                    {formData.type === "expense" && <div className="space-y-2">
+                      <Label htmlFor="authorizationId" className="text-gray-400 dark:text-[#4c4e51] font-bold text-[10px] uppercase tracking-wider">Protocolo da autorização aprovada</Label>
+                      <Input id="authorizationId" required value={formData.authorizationId} onChange={e => setFormData({...formData, authorizationId: e.target.value})} placeholder="Consulte em Governança" className="bg-gray-50 dark:bg-[#121315] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white" />
+                      <Link href="/governanca" className="text-xs text-indigo-700 underline dark:text-indigo-300">Abrir Governança</Link>
+                    </div>}
 
                     <div className="pt-4 flex justify-end">
                       <button type="submit" className="bg-white text-[#1e2023] px-6 py-2 rounded-sm font-bold text-xs uppercase tracking-widest hover:bg-gray-200 transition-colors">
@@ -325,7 +334,25 @@ export default function CaixaPage() {
           </div>
         </div>
 
-        <div className="bg-transparent border-t border-gray-200 dark:border-[#1e2023] pt-8 mt-8 overflow-x-auto w-full">
+        <div className="mt-6 space-y-3 md:hidden" aria-label="Lançamentos do caixa">
+          {transactions.length === 0 ? <p className="rounded-xl border border-gray-200 p-5 text-sm text-gray-600 dark:border-zinc-700 dark:text-gray-300">Nenhum lançamento registrado.</p> : transactions.map((tx) => (
+            <article key={tx.id} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-zinc-700 dark:bg-[#1e2023]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words font-medium text-gray-900 dark:text-white">{tx.description}</h3>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{formatDate(tx.timestamp)} · {tx.category}</p>
+                </div>
+                <p className={`shrink-0 font-semibold tabular-nums ${tx.type === "income" ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>{tx.type === "income" ? "+" : "−"}{formatCurrency(tx.amount)}</p>
+              </div>
+              <p className="mt-3 break-all text-xs text-gray-600 dark:text-gray-300">Registrado por {tx.createdByEmail}</p>
+              <div className="mt-2"><TransactionDocument transaction={tx} /></div>
+              {tx.isProject && tx.projectEntries && <details className="mt-3 border-t border-gray-200 pt-3 text-sm dark:border-zinc-700"><summary className="cursor-pointer font-medium">Ver lançamentos do projeto</summary><ul className="mt-2 space-y-2">{tx.projectEntries.map((entry: { description: string; amount: number; type: string }, index: number) => <li key={index} className="flex justify-between gap-3"><span>{entry.description}</span><span className="shrink-0 tabular-nums">{entry.type === "income" ? "+" : "−"}{formatCurrency(entry.amount)}</span></li>)}</ul></details>}
+              {(role === "tesoureiro" || role === "coordenador") && <button type="button" onClick={() => void handleTransactionDelete(tx)} className="mt-3 min-h-11 rounded-lg border border-amber-300 px-3 text-sm font-medium text-amber-700 focus-visible:outline-2 focus-visible:outline-amber-700 dark:border-amber-800 dark:text-amber-300">Solicitar correção</button>}
+              {role === "tesoureiro" && !tx.isProject && !tx.reimbursementId && !tx.reversesTransactionId && <button type="button" onClick={() => void handleReversal(tx)} className="ml-2 mt-3 min-h-11 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 dark:border-red-800 dark:text-red-300">Estornar</button>}
+            </article>
+          ))}
+        </div>
+        <div className="hidden bg-transparent border-t border-gray-200 dark:border-[#1e2023] pt-8 mt-8 overflow-x-auto w-full md:block">
           <Table className="w-full min-w-[800px]">
             <TableHeader className="border-b border-gray-200 dark:border-[#1e2023]">
               <TableRow className="border-none hover:bg-transparent">
@@ -369,6 +396,7 @@ export default function CaixaPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2 items-center">
+                          <TransactionDocument transaction={tx} />
                           {tx.isProject && (
                             <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                               {expandedProjects[tx.id] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -376,29 +404,18 @@ export default function CaixaPage() {
                           )}
                           {(role === "tesoureiro" || role === "coordenador") && (
                             <button 
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                if (role === "tesoureiro") {
-                                  if (confirm("Excluir definitivamente este lançamento?")) deleteTransaction(tx.id);
-                                } else {
-                                  const reason = prompt("Justificativa para solicitar exclusão deste lançamento:");
-                                  if (reason) {
-                                    await createRequest({
-                                      collection: "caixa",
-                                      itemId: tx.id,
-                                      itemNameOrDesc: `Caixa: ${tx.description} (${formatCurrency(tx.amount)}) - Motivo: ${reason}`,
-                                      requestedByEmail: user?.email || "unknown"
-                                    });
-                                    alert("Pedido de exclusão enviado para a Tesouraria.");
-                                  }
-                                }
+                                void handleTransactionDelete(tx);
                               }}
-                              className={`p-2 transition-colors ${role === 'tesoureiro' ? 'text-gray-400 dark:text-[#4c4e51] hover:text-red-500' : 'text-gray-400 dark:text-[#4c4e51] hover:text-amber-500'}`}
-                              title={role === 'tesoureiro' ? "Excluir Lançamento" : "Solicitar Exclusão"}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-indigo-600 ${role === 'tesoureiro' ? 'text-gray-600 dark:text-gray-300 hover:text-red-600' : 'text-gray-600 dark:text-gray-300 hover:text-amber-600'}`}
+                              title="Solicitar correção ou estorno"
+                              aria-label={`Solicitar correção do lançamento ${tx.description}`}
                             >
-                              {role === 'tesoureiro' ? <Trash2 className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
+                              <ShieldAlert className="w-5 h-5" />
                             </button>
                           )}
+                          {role === "tesoureiro" && !tx.isProject && !tx.reimbursementId && !tx.reversesTransactionId && <button type="button" onClick={(event) => { event.stopPropagation(); void handleReversal(tx); }} className="min-h-11 text-xs font-medium text-red-700 underline dark:text-red-300">Estornar</button>}
                         </div>
                       </TableCell>
                     </TableRow>

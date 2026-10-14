@@ -21,6 +21,10 @@ export interface Transaction {
   metadata?: any;
   isProject?: boolean;
   projectEntries?: any[];
+  document?: { path: string; name: string; mimeType: string; uploadedAt: number; uploadedByUid: string };
+  reimbursementId?: string;
+  reversesTransactionId?: string;
+  authorizationId?: string;
 }
 
 export interface InventoryItem {

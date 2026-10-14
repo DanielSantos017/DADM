@@ -1,0 +1,83 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "roles": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      "$uid": {
+        ".read": "auth != null && $uid === auth.uid",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || ($uid === auth.uid && !data.exists() && newData.child('role').val() === 'pendente' && newData.child('email').val() === auth.token.email))"
+      }
+    },
+    "transactions": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      "$id": {
+        ".write": false
+      }
+    },
+    "inventory": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      "$id": {
+        ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador') && (newData.exists() || root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro')"
+      }
+    },
+    "reimbursements": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      "$id": {
+        ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador') && !data.exists() && newData.exists() && !newData.child('source').exists() && newData.child('status').val() === 'pendente'"
+      }
+    },
+    "projects": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area' || root.child('roles').child(auth.uid).child('role').val() === 'usuario_area')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')"
+    },
+    "mcp_batches": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')"
+    },
+    "suppliers": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador' || root.child('roles').child(auth.uid).child('role').val() === 'adm_area')"
+    },
+    "categories": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')"
+    },
+    "batch_approvals": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')"
+    },
+    "processed_orders": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')"
+    },
+    "delete_requests": {
+      ".read": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')",
+      ".write": "auth != null && (root.child('roles').child(auth.uid).child('role').val() === 'tesoureiro' || root.child('roles').child(auth.uid).child('role').val() === 'coordenador')"
+    },
+    "reimbursement_private": {
+      ".read": false,
+      ".write": false
+    },
+    "public_submission_limits": {
+      ".read": false,
+      ".write": false
+    },
+    "governance_requests": {
+      ".read": false,
+      ".write": false
+    },
+    "governance_policy": {
+      ".read": false,
+      ".write": false
+    },
+    "authorization_usage": {
+      ".read": false,
+      ".write": false
+    },
+    "reserve_account": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

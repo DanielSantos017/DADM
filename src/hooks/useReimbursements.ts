@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ref, onValue, push, set, update, remove } from "firebase/database";
+import { ref, onValue, push, set, update, remove, get } from "firebase/database";
 import { database } from "@/lib/firebase";
 
 export interface ReimbursementRequest {
@@ -7,9 +7,14 @@ export interface ReimbursementRequest {
   description: string;
   amount: number;
   category: string;
-  receiptLink: string;
-  status: "pendente" | "aprovado" | "recusado";
-  requestedByEmail: string;
+  receiptLink?: string;
+  status: "pendente" | "em_analise" | "aprovado" | "pago" | "recusado" | "cancelado";
+  requestedByEmail?: string;
+  requestedByName?: string;
+  source?: "public";
+  expenseAt?: string;
+  authorizationProtocol?: string;
+  approvalBasis?: string;
   timestamp: number;
 }
 
@@ -52,10 +57,44 @@ export function useReimbursements() {
     await update(rRef, { status: newStatus });
   };
 
+  const approveRequest = async (id: string, approvedByEmail: string) => {
+    const requestSnapshot = await get(ref(database, `reimbursements/${id}`));
+    const request = requestSnapshot.val() as ReimbursementRequest | null;
+    if (!request || request.status !== "pendente") {
+      throw new Error("Este reembolso não está mais pendente.");
+    }
+    if (!Number.isFinite(request.amount) || request.amount <= 0) {
+      throw new Error("O valor do reembolso é inválido.");
+    }
+
+    // A chave estável evita criar dois débitos quando a aprovação é repetida.
+    const transactionId = `reimbursement_${id}`;
+    if ((await get(ref(database, `transactions/${transactionId}`))).exists()) {
+      throw new Error("Este reembolso já possui lançamento no caixa.");
+    }
+
+    const now = Date.now();
+    await update(ref(database), {
+      [`reimbursements/${id}/status`]: "aprovado",
+      [`transactions/${transactionId}`]: {
+        id: transactionId,
+        description: `Reembolso: ${request.description}`,
+        amount: request.amount,
+        type: "expense",
+        date: now,
+        category: "Reembolsos",
+        createdByEmail: approvedByEmail,
+        timestamp: now,
+        createdAtIso: new Date(now).toISOString(),
+        reimbursementId: id,
+      },
+    });
+  };
+
   const deleteRequest = async (id: string) => {
     const rRef = ref(database, `reimbursements/${id}`);
     await remove(rRef);
   };
 
-  return { reimbursements, loading, createRequest, updateStatus, deleteRequest };
+  return { reimbursements, loading, createRequest, updateStatus, approveRequest, deleteRequest };
 }

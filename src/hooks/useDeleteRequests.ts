@@ -50,8 +50,11 @@ export function useDeleteRequests() {
   };
 
   const approveRequest = async (request: DeleteRequest) => {
+    if (request.collection === "caixa") {
+      throw new Error("Lançamentos do Caixa não podem ser excluídos. Registre um estorno auditável após conciliação.");
+    }
     // 1. Remove da coleção original
-    const itemRef = ref(database, `${request.collection === 'caixa' ? 'transactions' : 'inventory'}/${request.itemId}`);
+    const itemRef = ref(database, `inventory/${request.itemId}`);
     await remove(itemRef);
     // 2. Remove o request
     await removeRequest(request.id);

@@ -1,11 +1,13 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { ref, get, set } from "firebase/database";
+import { ref, get, set, onValue } from "firebase/database";
 import { auth, googleProvider, database } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 
 export type UserRole = "tesoureiro" | "coordenador" | "usuario" | "usuario_area" | "adm_area" | "pendente" | "bloqueado" | null;
+
+const activeRoles: Exclude<UserRole, null>[] = ["tesoureiro", "coordenador", "usuario", "usuario_area", "adm_area"];
 
 interface AuthContextType {
   user: User | null;
@@ -78,6 +80,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = onValue(ref(database, `roles/${user.uid}`), (snapshot) => {
+      const currentRole = snapshot.val()?.role as UserRole;
+      if (!currentRole || !activeRoles.includes(currentRole)) {
+        void signOut(auth);
+        return;
+      }
+      setRole(currentRole);
+    }, (error) => {
+      console.error("Erro ao acompanhar permissões:", error);
+      void signOut(auth);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
   const loginWithGoogle = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -104,7 +124,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       router.push("/dashboard");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Erro no login com Google:", error);
       throw error;
     }

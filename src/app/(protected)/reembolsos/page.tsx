@@ -1,255 +1,139 @@
 "use client";
-import { useState, useRef } from "react";
+
+import { useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { useReimbursements } from "@/hooks/useReimbursements";
-import { Ticket, CheckCircle, XCircle, Clock, Link as LinkIcon, Send, UploadCloud, Loader2, Trash2 } from "lucide-react";
-import { useTransactions } from "@/hooks/useTransactions";
+import { useReimbursements, type ReimbursementRequest } from "@/hooks/useReimbursements";
+import { ReimbursementPrivateDetails } from "@/components/ReimbursementPrivateDetails";
+
+type Action = "approve" | "reject" | "cancel" | "paid";
+
+const statusLabels: Record<string, string> = {
+  pendente: "Pendente",
+  em_analise: "Em análise",
+  aprovado: "Aprovado",
+  pago: "Pago",
+  recusado: "Recusado",
+  cancelado: "Cancelado",
+  registrando_pagamento: "Registrando pagamento",
+};
 
 export default function ReembolsosPage() {
   const { user, role } = useAuth();
-  const { reimbursements, loading, createRequest, updateStatus, deleteRequest } = useReimbursements();
-  const { addTransaction } = useTransactions();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { reimbursements, loading } = useReimbursements();
+  const [filter, setFilter] = useState<"ativos" | "todos">("ativos");
+  const [search, setSearch] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [paymentReference, setPaymentReference] = useState("");
 
-  const [formData, setFormData] = useState({
-    description: "",
-    amount: "",
-    category: "Geral",
+  const visible = reimbursements.filter((item) => {
+    if (filter === "ativos" && !["pendente", "em_analise", "aprovado", "registrando_pagamento"].includes(item.status)) return false;
+    const query = search.toLocaleLowerCase("pt-BR");
+    return !query || [item.id, item.requestedByName, item.requestedByEmail, item.description]
+      .some((value) => value?.toLocaleLowerCase("pt-BR").includes(query));
   });
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.description || !formData.amount || !file) {
-      alert("Preencha todos os campos obrigatórios e anexe o comprovante.");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("O arquivo é muito grande. O tamanho máximo permitido é 5MB.");
-      return;
-    }
-
-    setIsUploading(true);
+  async function publicAction(item: ReimbursementRequest, action: Action, reference?: string) {
+    if (!user) return;
+    setBusyId(item.id);
+    setMessage("");
     try {
-      const base64String = await fileToBase64(file);
-      const base64Data = base64String.split(",")[1];
-      const extension = "." + file.name.split('.').pop();
-      const userName = user?.displayName || user?.email?.split('@')[0] || "Usuario";
-
-      const payload = {
-        base64: base64Data,
-        mimeType: file.type,
-        extension: extension,
-        email: user?.email || "unknown@system",
-        userName: userName,
-        amount: formData.amount
-      };
-
-      const uploadUrl = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyv2Rj5R8xBDTOi3lTGAwfYOiNcyzVzxSoA0lJNfOW5j7TJYWND3FxLL6yLexZt20KxkA/exec";
-      
-      const response = await fetch(uploadUrl, {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/reembolsos/${encodeURIComponent(item.id)}/acao`, {
         method: "POST",
-        body: JSON.stringify(payload)
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, paymentReference: reference }),
       });
-      
       const result = await response.json();
-      
-      if (result.status !== "success") {
-        throw new Error("Erro do Google Drive: " + result.message);
-      }
-
-      await createRequest({
-        description: formData.description,
-        amount: parseFloat(formData.amount),
-        category: formData.category,
-        receiptLink: result.url,
-        requestedByEmail: user?.email || "unknown@system"
-      });
-
-      setFormData({ description: "", amount: "", category: "Geral" });
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      alert("Pedido enviado! O comprovante foi salvo no Google Drive.");
-    } catch (err: any) {
-      console.error(err);
-      alert("Erro ao enviar: " + err.message);
+      if (!response.ok) throw new Error(result.error || "Não foi possível atualizar o pedido.");
+      setMessage(action === "paid" ? "Pagamento registrado no caixa." : "Pedido atualizado.");
+      setPaymentId(null);
+      setPaymentReference("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o pedido.");
     } finally {
-      setIsUploading(false);
+      setBusyId(null);
     }
-  };
+  }
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  };
-
-  if (loading) return <div className="p-6 text-gray-900 dark:text-white">Carregando portal...</div>;
-
-  const isBoard = role === "tesoureiro" || role === "coordenador";
-  const myRequests = isBoard ? reimbursements : reimbursements.filter(r => r.requestedByEmail === user?.email);
+  const currency = (amount: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(amount);
 
   return (
-    <div className="space-y-8 pb-10">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-          <Ticket className="w-6 h-6" /> Portal de Reembolsos
-        </h1>
-        <p className="text-gray-500 dark:text-[#8a8a8a] mt-1">
-          {isBoard ? "Gerencie os pedidos de reembolso da equipe." : "Solicite reembolso de despesas feitas em prol da instituição."}
-        </p>
+    <div className="space-y-6 pb-12">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Reembolsos</h1>
+          <p className="mt-1 text-sm text-gray-500">Analise os pedidos e registre o pagamento somente depois de fazer o Pix.</p>
+        </div>
+        <Link href="/reembolso" className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800">Abrir formulário público</Link>
       </div>
 
-      {!isBoard && (
-        <div className="bg-white dark:bg-[#1e2023] border border-gray-200 dark:border-[#2a2c30] p-6 rounded-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <h2 className="text-gray-900 dark:text-white font-medium mb-4 flex items-center gap-2"><Send className="w-4 h-4" /> Novo Pedido</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-[#4c4e51] uppercase tracking-wider">Descrição do Gasto</label>
-                <input required disabled={isUploading} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Ex: Compra de Copos para a Festa" className="w-full h-10 px-3 bg-gray-50 dark:bg-[#121315] border border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white rounded-md text-sm outline-none focus:border-indigo-500 disabled:opacity-50" />
+      <div className="flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-zinc-700 dark:bg-[#1e2023]">
+        <input aria-label="Buscar reembolso" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, protocolo ou descrição" className="min-w-[240px] flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-zinc-600" />
+        <select aria-label="Filtrar reembolsos" value={filter} onChange={(event) => setFilter(event.target.value as "ativos" | "todos")} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-zinc-600">
+          <option value="ativos">Aguardando ação</option>
+          <option value="todos">Todos os pedidos</option>
+        </select>
+      </div>
+
+      {message && <p role="status" className="rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">{message}</p>}
+      {loading ? <p className="text-sm text-gray-500">Carregando pedidos...</p> : visible.length === 0 ? <p className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 dark:border-zinc-700 dark:bg-[#1e2023]">Nenhum pedido encontrado.</p> : (
+        <div className="space-y-4">
+          {visible.map((item) => (
+            <article key={item.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-[#1e2023]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">{item.requestedByName || item.requestedByEmail || "Solicitante"}</p>
+                  <p className="mt-1 text-xs text-gray-500">Protocolo: {item.id} · {new Date(item.timestamp).toLocaleString("pt-BR")}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-gray-900 dark:text-white">{currency(item.amount)}</p>
+                  <p className="text-xs text-gray-500">{statusLabels[item.status] || item.status}</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 dark:text-[#4c4e51] uppercase tracking-wider">Valor (R$)</label>
-                <input required disabled={isUploading} type="number" step="0.01" min="0" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="150.50" className="w-full h-10 px-3 bg-gray-50 dark:bg-[#121315] border border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white rounded-md text-sm outline-none focus:border-indigo-500 disabled:opacity-50" />
+
+              <p className="mt-4 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">{item.description}</p>
+              {item.source === "public" && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-gray-700 dark:bg-zinc-800 dark:text-gray-200">
+                <p>Gasto declarado: {item.expenseAt ? new Date(item.expenseAt).toLocaleString("pt-BR") : "data não informada"}</p>
+                <p>Autorização prévia: {item.authorizationProtocol || "não informada; exige exceção aprovada"}</p>
+                {item.approvalBasis && <p>Base da aprovação: {item.approvalBasis}</p>}
+                {item.status === "pendente" && <Link href="/governanca" className="mt-1 inline-block font-medium text-indigo-700 underline dark:text-indigo-300">Consultar ou solicitar decisão excepcional</Link>}
+              </div>}
+              <div className="mt-4 border-t border-gray-100 pt-4 dark:border-zinc-700">
+                {item.source === "public" ? <ReimbursementPrivateDetails id={item.id} /> : item.receiptLink ? <a href={item.receiptLink} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline">Abrir comprovante antigo</a> : null}
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-400 dark:text-[#4c4e51] uppercase tracking-wider">Comprovante (PDF ou Imagem - Máx 5MB)</label>
-              <div className="relative">
-                <input 
-                  required 
-                  disabled={isUploading}
-                  ref={fileInputRef}
-                  type="file" 
-                  accept="image/*,application/pdf"
-                  onChange={e => setFile(e.target.files ? e.target.files[0] : null)}
-                  className="w-full h-10 px-3 pt-1.5 bg-gray-50 dark:bg-[#121315] border border-gray-200 dark:border-[#2a2c30] text-gray-500 dark:text-[#8a8a8a] rounded-md text-sm outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 dark:file:bg-indigo-500/20 dark:file:text-indigo-300 transition-all disabled:opacity-50 cursor-pointer"
-                />
-              </div>
-            </div>
-            <button disabled={isUploading} type="submit" className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded font-medium transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed">
-              {isUploading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Enviando para o Drive...</>
-              ) : (
-                <><UploadCloud className="w-4 h-4" /> Enviar Solicitação</>
+
+              {item.source !== "public" && item.status === "pendente" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Pedido legado preservado para auditoria. O fluxo antigo de aprovação foi bloqueado porque não comprova autorização prévia. Oriente o solicitante a abrir um novo pedido pelo formulário público, informando este protocolo na justificativa.</p>}
+
+              {item.source === "public" && item.status === "pendente" && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button disabled={busyId === item.id} onClick={() => publicAction(item, "approve")} className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Aprovar</button>
+                  <button disabled={busyId === item.id} onClick={() => publicAction(item, "reject")} className="rounded-md bg-red-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Recusar</button>
+                  <button disabled={busyId === item.id} onClick={() => publicAction(item, "cancel")} className="rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-700 dark:text-gray-200 disabled:opacity-50">Cancelar pedido</button>
+                </div>
               )}
-            </button>
-          </form>
+
+              {item.source === "public" && item.status === "aprovado" && role === "tesoureiro" && (
+                <div className="mt-4 space-y-2 rounded-lg bg-amber-50 p-3 dark:bg-amber-950/20">
+                  {paymentId === item.id ? (
+                    <>
+                      <label className="block text-xs font-medium text-gray-800 dark:text-gray-200">Referência do Pix realizado
+                        <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} maxLength={120} placeholder="ID, data ou referência no extrato" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" />
+                      </label>
+                      <div className="flex gap-2">
+                        <button disabled={busyId === item.id || paymentReference.trim().length < 3} onClick={() => publicAction(item, "paid", paymentReference)} className="rounded-md bg-indigo-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Confirmar pagamento e lançar no caixa</button>
+                        <button onClick={() => setPaymentId(null)} className="px-3 py-2 text-xs text-gray-600 dark:text-gray-300">Voltar</button>
+                      </div>
+                    </>
+                  ) : <button onClick={() => setPaymentId(item.id)} className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Registrar Pix já realizado</button>}
+                </div>
+              )}
+            </article>
+          ))}
         </div>
       )}
-
-      <div className="bg-white dark:bg-[#1e2023] border border-gray-200 dark:border-[#2a2c30] rounded-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-        <div className="bg-gray-50 dark:bg-[#2a2c30]/50 p-4 border-b border-gray-200 dark:border-[#2a2c30]">
-          <h3 className="text-gray-900 dark:text-white font-medium">{isBoard ? "Fila Geral de Reembolsos" : "Meus Pedidos"}</h3>
-        </div>
-        <div className="p-0 overflow-x-auto w-full">
-          {myRequests.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 dark:text-[#4c4e51] text-sm">Nenhum pedido de reembolso encontrado.</div>
-          ) : (
-            <table className="w-full text-sm text-left min-w-[700px]">
-              <thead className="text-[10px] uppercase text-gray-500 dark:text-[#8a8a8a] bg-gray-50 dark:bg-[#121315]">
-                <tr>
-                  <th className="px-6 py-3">Data</th>
-                  <th className="px-6 py-3">Detalhes</th>
-                  <th className="px-6 py-3">Comprovante</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myRequests.map(req => (
-                  <tr key={req.id} className="border-b border-gray-200 dark:border-[#2a2c30]">
-                    <td className="px-6 py-4">
-                      <span className="text-gray-900 dark:text-white text-xs">{new Date(req.timestamp).toLocaleDateString('pt-BR')}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-gray-900 dark:text-white font-medium">{req.description}</div>
-                      <div className="text-emerald-400 font-bold mt-1">{formatCurrency(req.amount)}</div>
-                      {isBoard && <div className="text-[10px] text-gray-500 dark:text-[#8a8a8a] mt-1">Por: {req.requestedByEmail}</div>}
-                    </td>
-                    <td className="px-6 py-4">
-                      <a href={req.receiptLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-400 hover:underline text-xs">
-                        <LinkIcon className="w-3 h-3" /> Ver Anexo
-                      </a>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded w-fit ${
-                        req.status === 'aprovado' ? 'bg-green-500/20 text-green-500' :
-                        req.status === 'recusado' ? 'bg-red-500/20 text-red-500' :
-                        'bg-amber-500/20 text-amber-500'
-                      }`}>
-                        {req.status === 'aprovado' && <CheckCircle className="w-3 h-3" />}
-                        {req.status === 'recusado' && <XCircle className="w-3 h-3" />}
-                        {req.status === 'pendente' && <Clock className="w-3 h-3" />}
-                        {req.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 flex gap-2 justify-end">
-                      {isBoard && req.status === 'pendente' && (
-                        <>
-                          <button 
-                            onClick={async () => {
-                              await updateStatus(req.id, "aprovado");
-                              await addTransaction({
-                                description: `Reembolso: ${req.description}`,
-                                amount: req.amount,
-                                type: 'expense',
-                                date: Date.now(),
-                                category: 'Reembolsos',
-                                createdByEmail: user?.email || "unknown@system",
-                                timestamp: Date.now(),
-                                createdAtIso: new Date().toISOString()
-                              });
-                              alert("Reembolso aprovado e debitado do caixa!");
-                            }} 
-                            className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-medium"
-                          >
-                            Aprovar
-                          </button>
-                          <button onClick={() => updateStatus(req.id, "recusado")} className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded font-medium">
-                            Recusar
-                          </button>
-                        </>
-                      )}
-                      
-                      {isBoard && req.status !== 'pendente' && (
-                        <span className="text-[10px] text-gray-400 dark:text-[#4c4e51] uppercase flex items-center mr-2">Julgado</span>
-                      )}
-
-                      {(isBoard || (req.requestedByEmail === user?.email && req.status === 'pendente')) && (
-                        <button 
-                          onClick={async () => {
-                            if(confirm("Tem certeza que deseja excluir este reembolso?")) {
-                              await deleteRequest(req.id);
-                            }
-                          }} 
-                          className="text-xs bg-gray-200 hover:bg-gray-300 dark:bg-zinc-800 dark:hover:bg-red-900/50 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 p-1.5 rounded transition-colors"
-                          title="Excluir pedido"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
-
-
-

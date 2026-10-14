@@ -1,19 +1,8 @@
 import type { Metadata } from "next";
-import { Montserrat, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Analytics } from "@vercel/analytics/next";
-
-const montserrat = Montserrat({
-  variable: "--font-montserrat",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "APP-DADM",
@@ -28,7 +17,7 @@ export default function RootLayout({
   return (
     <html 
       lang="pt-BR" 
-      className={`${montserrat.className} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-gray-50 text-gray-900 dark:bg-[#121315] dark:text-white selection:bg-indigo-500/30 selection:text-indigo-900 dark:selection:bg-[#4c4e51] dark:selection:text-white">

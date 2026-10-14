@@ -1,14 +1,37 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get("token");
+type ExportItem = {
+  timestamp?: number;
+  description?: string;
+  category?: string;
+  type?: string;
+  amount?: number;
+  createdByEmail?: string;
+  name?: string;
+  document?: string;
+  phone?: string;
+  minOrder?: string;
+  address?: { city?: string; neighborhood?: string };
+  requestedByEmail?: string;
+  status?: string;
+  role?: string;
+  approvedBy?: string;
+};
 
-  // A simple hardcoded token for the pipedream webhook to use
-  // The user should set a strong password here or in env variables.
-  const API_SECRET = process.env.EXPORT_SECRET || "dadm_export_secret_2026";
+type ExportCollection = Record<string, ExportItem> | null | undefined;
 
-  if (token !== API_SECRET) {
+export async function POST(request: Request) {
+  const apiSecret = process.env.EXPORT_SECRET;
+  const databaseSecret = process.env.FIREBASE_DB_SECRET;
+  if (!apiSecret || !databaseSecret) {
+    return NextResponse.json({ error: "Export is not configured" }, { status: 503 });
+  }
+
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+  const tokenHash = createHash("sha256").update(token).digest();
+  const secretHash = createHash("sha256").update(apiSecret).digest();
+  if (!timingSafeEqual(tokenHash, secretHash)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -17,13 +40,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Database URL not configured" }, { status: 500 });
   }
 
-  // Permite passar o secret do DB direto ou via variavel de ambiente (Recomendado)
-  const fireAuth = process.env.FIREBASE_DB_SECRET || searchParams.get("fireauth");
-  const url = fireAuth ? `${dbUrl}/.json?auth=${fireAuth}` : `${dbUrl}/.json`;
+  const url = `${dbUrl.replace(/\/$/, "")}/.json?auth=${encodeURIComponent(databaseSecret)}`;
 
   try {
     // Busca todo o banco de dados via REST API do Firebase autenticado
-    const response = await fetch(url);
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      return NextResponse.json({ error: "Firebase request failed" }, { status: 502 });
+    }
     const data = await response.json();
 
     if (!data) {
@@ -35,7 +59,7 @@ export async function GET(request: Request) {
     }
 
     // Formata cada coleção para Array de Arrays (Padrão Google Sheets)
-    const formatCaixa = (obj: any) => {
+    const formatCaixa = (obj: ExportCollection) => {
       if (!obj) return [];
       const headers = ["ID", "Data", "Descrição", "Categoria", "Tipo", "Valor", "Autor"];
       const rows = Object.keys(obj).map(key => {
@@ -53,7 +77,7 @@ export async function GET(request: Request) {
       return [headers, ...rows];
     };
 
-    const formatFornecedores = (obj: any) => {
+    const formatFornecedores = (obj: ExportCollection) => {
       if (!obj) return [];
       const headers = ["ID", "Nome Fantasia", "Documento", "Telefone", "Pedido Mínimo", "Cidade", "Bairro"];
       const rows = Object.keys(obj).map(key => {
@@ -71,7 +95,7 @@ export async function GET(request: Request) {
       return [headers, ...rows];
     };
 
-    const formatReembolsos = (obj: any) => {
+    const formatReembolsos = (obj: ExportCollection) => {
       if (!obj) return [];
       const headers = ["ID", "Data Solicitação", "Descrição", "Categoria", "Valor", "Solicitante", "Status"];
       const rows = Object.keys(obj).map(key => {
@@ -89,7 +113,7 @@ export async function GET(request: Request) {
       return [headers, ...rows];
     };
 
-    const formatUsuarios = (obj: any) => {
+    const formatUsuarios = (obj: ExportCollection) => {
       if (!obj) return [];
       const headers = ["UID", "Cargo", "Aprovado Por"];
       const rows = Object.keys(obj).map(key => {
@@ -113,7 +137,7 @@ export async function GET(request: Request) {
       projetos: [["ID"], ...(data.projects ? Object.keys(data.projects).map(k => [k]) : [])],
     };
 
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Export Error:", error);
     return NextResponse.json({ error: "Failed to export data" }, { status: 500 });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ref, onValue, push, set, remove, update } from "firebase/database";
+import { ref, onValue, push, set, remove, update, runTransaction } from "firebase/database";
 import { database } from "@/lib/firebase";
 import { InventoryItem } from "@/types";
 
@@ -51,9 +51,10 @@ export function useInventory() {
         realCostUnit,
         expectedProfit
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Firebase write error:", error);
-      alert("Erro de Permissão no Firebase: Você precisa acessar o console do Firebase, ir em 'Realtime Database' -> 'Regras' e mudar .read e .write para true.");
+      alert("Não foi possível salvar o item. Verifique seu acesso ou tente novamente.");
+      throw error;
     }
   };
 
@@ -80,43 +81,34 @@ export function useInventory() {
     try {
       const itemRef = ref(database, `inventory/${id}`);
       await remove(itemRef);
-    } catch (error) {
+    } catch {
       alert("Erro de Permissão ao excluir. Verifique as regras do Firebase.");
+      throw new Error("Não foi possível excluir o item.");
     }
   };
 
   const dispatchItem = async (id: string, quantityToDeduct: number) => {
-    const currentItem = items.find(i => i.id === id);
-    if (!currentItem) throw new Error("Item não encontrado");
-    
-    if (quantityToDeduct > currentItem.quantity) {
-      throw new Error("Quantidade a retirar maior que o estoque atual");
+    if (!Number.isSafeInteger(quantityToDeduct) || quantityToDeduct <= 0) {
+      throw new Error("Informe uma quantidade inteira positiva.");
     }
-
-    if (quantityToDeduct === currentItem.quantity) {
-      // Retirando tudo, apenas exclui o registro para limpar o DB
-      await deleteItem(id);
-      return currentItem;
-    }
-
-    const newQuantity = currentItem.quantity - quantityToDeduct;
-    const proportion = newQuantity / currentItem.quantity;
-    
-    // Ajustar despesas adicionais proporcionalmente
-    const newAdditionalExpenses = currentItem.additionalExpenses * proportion;
-    
-    const realCostUnit = currentItem.baseCost + (newAdditionalExpenses / newQuantity);
-    const expectedProfit = (currentItem.salePrice - realCostUnit) * newQuantity;
-
     const itemRef = ref(database, `inventory/${id}`);
-    await update(itemRef, {
-      quantity: newQuantity,
-      additionalExpenses: newAdditionalExpenses,
-      realCostUnit,
-      expectedProfit
+    const state: { originalItem?: InventoryItem } = {};
+    const result = await runTransaction(itemRef, (current: InventoryItem | null) => {
+      if (!current || !Number.isSafeInteger(current.quantity) || quantityToDeduct > current.quantity) return;
+      state.originalItem = { ...current, id };
+      const remaining = current.quantity - quantityToDeduct;
+      const additionalExpenses = current.additionalExpenses * (remaining / current.quantity);
+      const realCostUnit = current.baseCost + (remaining ? additionalExpenses / remaining : 0);
+      return {
+        ...current,
+        quantity: remaining,
+        additionalExpenses,
+        realCostUnit,
+        expectedProfit: (current.salePrice - realCostUnit) * remaining,
+      };
     });
-
-    return currentItem; // Retorna o estado antes da redução para usar os valores de venda no Caixa
+    if (!result.committed || !state.originalItem) throw new Error("Item inexistente ou quantidade indisponível no estoque atual.");
+    return state.originalItem;
   };
 
   return { items, loading, addItem, updateItem, deleteItem, dispatchItem };

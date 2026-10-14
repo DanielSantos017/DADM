@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { ref, onValue, push, set, remove } from "firebase/database";
+import { ref, onValue } from "firebase/database";
 import { database } from "@/lib/firebase";
 import { Transaction } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useTransactions() {
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,29 +40,22 @@ export function useTransactions() {
     };
   }, []);
 
-  const addTransaction = async (transaction: Omit<Transaction, 'id'>) => {
+  const addTransaction = async (transaction: Partial<Transaction> & Pick<Transaction, "description" | "amount" | "type" | "category"> & { authorizationId?: string }) => {
     try {
-      const transactionsRef = ref(database, 'transactions');
-      const newTxRef = push(transactionsRef);
-      const uniqueId = newTxRef.key;
-      await set(newTxRef, {
-        ...transaction,
-        id: uniqueId
+      if (!user) throw new Error("Faça login novamente.");
+      const response = await fetch("/api/caixa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify(transaction),
       });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Não foi possível salvar o lançamento.");
+      return result.id as string;
     } catch (error) {
       console.error("Firebase write error:", error);
-      alert("Erro de Permissão no Firebase: Você precisa acessar o console do Firebase, ir em 'Realtime Database' -> 'Regras' e mudar .read e .write para true.");
+      throw error;
     }
   };
 
-  const deleteTransaction = async (id: string) => {
-    try {
-      const txRef = ref(database, `transactions/${id}`);
-      await remove(txRef);
-    } catch (error) {
-      alert("Erro de Permissão ao excluir. Verifique as regras do Firebase.");
-    }
-  };
-
-  return { transactions, loading, addTransaction, deleteTransaction };
+  return { transactions, loading, addTransaction };
 }

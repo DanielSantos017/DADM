@@ -1,15 +1,14 @@
 "use client";
 import { useState, useMemo } from "react";
 import { useProcessedOrders } from "@/hooks/useProcessedOrders";
-import { useTransactions } from "@/hooks/useTransactions";
 import { useAuth } from "@/contexts/AuthContext";
-import { Receipt, TrendingUp, DollarSign, Package, Users, ChevronDown, ChevronUp, Trash2, Send, CheckCircle2 } from "lucide-react";
+import { Receipt, TrendingUp, DollarSign, Package, Users, ChevronDown, ChevronUp, Trash2, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function HistoricoPedidosPage() {
-  const { role, user } = useAuth();
-  const { orders, loading, deleteProcessedOrder, markAsSentToCaixa } = useProcessedOrders();
-  const { addTransaction } = useTransactions();
+  const { role } = useAuth();
+  const { orders, loading, deleteProcessedOrder } = useProcessedOrders();
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
   const [expandedBuyers, setExpandedBuyers] = useState<Record<string, string[]>>({}); // Record<batchId, nomeComprador[]>
 
@@ -199,31 +198,9 @@ export default function HistoricoPedidosPage() {
                               <CheckCircle2 className="w-4 h-4" /> Lote Enviado ao Caixa
                             </span>
                           ) : (
-                            <button 
-                              onClick={async () => {
-                                if (confirm("Enviar este lote para o Caixa? Isso registrará o lucro/prejuízo no saldo consolidado.")) {
-                                  await addTransaction({
-                                    description: `Lote Processado: ${batch.batchName}`,
-                                    amount: Math.abs(batch.profit),
-                                    type: batch.profit >= 0 ? "income" : "expense",
-                                    category: "Vendas de Produtos",
-                                    date: Date.now(),
-                                    createdByEmail: user?.email || "unknown@system",
-                                    createdAtIso: new Date().toISOString(),
-                                    timestamp: Date.now(),
-                                    isProject: true, // Reusa a mecânica de expansão
-                                    projectEntries: [
-                                      { description: "Total de Vendas (Entradas)", amount: batch.revenue, type: "income", createdAt: batch.timestamp, createdByEmail: "Sistema" },
-                                      { description: "Total de Custos de Produtos e Despesas (Saídas)", amount: batch.totalCost + batch.totalExpenses, type: "expense", createdAt: batch.timestamp, createdByEmail: "Sistema" }
-                                    ]
-                                  });
-                                  await markAsSentToCaixa(batch.id);
-                                }
-                              }}
-                              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"
-                            >
-                              <Send className="w-4 h-4" /> Enviar ao Caixa
-                            </button>
+                            <Link href="/caixa" className="flex items-center gap-1 bg-amber-100 text-amber-900 px-3 py-1.5 rounded-lg text-xs font-bold">
+                              Conciliar entradas e saídas brutas no Caixa
+                            </Link>
                           )
                         )}
                       </div>

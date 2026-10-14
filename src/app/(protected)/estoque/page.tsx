@@ -4,7 +4,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useInventory } from "@/hooks/useInventory";
 import { useCategories } from "@/hooks/useCategories";
 import { useDeleteRequests } from "@/hooks/useDeleteRequests";
-import { useTransactions } from "@/hooks/useTransactions";
 import { Plus, Trash2, Package, Printer, ShieldAlert, PackageMinus } from "lucide-react";
 import {
   Table,
@@ -24,12 +23,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBatchApprovals } from "@/hooks/useBatchApprovals";
+import type { InventoryItem } from "@/types";
 
 export default function EstoquePage() {
   const { role, user } = useAuth();
   const { items, loading, addItem, deleteItem, dispatchItem } = useInventory();
   const { categories, addCategory } = useCategories("estoque");
-  const { addTransaction } = useTransactions();
   const { batches, updateBatchStatus } = useBatchApprovals();
   
   const [isOpen, setIsOpen] = useState(false);
@@ -104,31 +103,35 @@ export default function EstoquePage() {
 
     try {
       // Retira do estoque
+      const wasSale = dispatchReason === "venda";
       const originalItem = await dispatchItem(dispatchItemData.id, dispatchQty);
-      
-      // Se for venda, adiciona no caixa automaticamente
-      if (dispatchReason === "venda") {
-        const totalSale = originalItem.salePrice * dispatchQty;
-        await addTransaction({
-          description: `Venda: ${originalItem.name} (${dispatchQty}x)`,
-          amount: totalSale,
-          type: 'income',
-          date: Date.now(),
-          category: 'Vendas de Estoque',
-          createdByEmail: user?.email || "unknown@system",
-          timestamp: Date.now(),
-          createdAtIso: new Date().toISOString()
-        });
-      }
       
       setIsDispatchOpen(false);
       setDispatchItemData(null);
       setDispatchQty(1);
       setDispatchReason("venda");
-      alert("Saída registrada com sucesso!");
+      alert(wasSale
+        ? `Saída registrada. A Tesouraria deve conciliar e lançar a receita bruta de ${formatCurrency(originalItem.salePrice * dispatchQty)} no Caixa.`
+        : "Saída registrada com sucesso!");
     } catch (error: any) {
       alert("Erro ao registrar saída: " + error.message);
     }
+  };
+
+  const handleInventoryDelete = async (item: InventoryItem) => {
+    if (role === "tesoureiro") {
+      if (confirm("Excluir definitivamente este lote?")) await deleteItem(item.id);
+      return;
+    }
+    const reason = prompt("Justificativa para solicitar exclusão deste item:");
+    if (!reason?.trim()) return;
+    await createRequest({
+      collection: "estoque",
+      itemId: item.id,
+      itemNameOrDesc: `Estoque: ${item.name} (${item.quantity}un) - Motivo: ${reason.trim()}`,
+      requestedByEmail: user?.email || "unknown",
+    });
+    alert("Pedido de exclusão enviado para a Tesouraria.");
   };
 
   const getFontSize = (value: number) => {
@@ -151,13 +154,13 @@ export default function EstoquePage() {
   return (
     <>
       <div className="space-y-6 no-print">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Controle de Estoque</h1>
             <p className="text-gray-500 dark:text-zinc-400 mt-1">Gerencie produtos e calcule lucro real dinamicamente.</p>
           </div>
           
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
             {role === "tesoureiro" && (
                <button onClick={handlePrint} className="flex items-center gap-2 bg-gray-900 dark:bg-[#2a2c30] hover:bg-gray-800 dark:hover:bg-[#4c4e51] text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm">
                  <Printer className="w-4 h-4" /> Imprimir Inventário
@@ -169,7 +172,7 @@ export default function EstoquePage() {
                 <DialogTrigger className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm">
                   <Plus className="w-4 h-4" /> Adicionar Lote
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[500px] bg-white dark:bg-[#1e2023] border-gray-200 dark:border-[#2a2c30] text-gray-900 dark:text-white">
                   <DialogHeader>
                     <DialogTitle className="text-gray-900 dark:text-white font-medium">Novo Lote de Produtos</DialogTitle>
                   </DialogHeader>
@@ -268,7 +271,25 @@ export default function EstoquePage() {
           </div>
         </div>
 
-        <div className="bg-transparent border-t border-gray-200 dark:border-[#1e2023] pt-8 mt-8 overflow-x-auto w-full">
+        <div className="mt-6 space-y-3 md:hidden" aria-label="Itens do estoque">
+          {items.length === 0 ? <p className="rounded-xl border border-gray-200 p-5 text-sm text-gray-600 dark:border-zinc-700 dark:text-gray-300">Nenhum item no estoque.</p> : items.map((item) => (
+            <article key={item.id} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-zinc-700 dark:bg-[#1e2023]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><h3 className="break-words font-medium text-gray-900 dark:text-white">{item.name}</h3><p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{item.category} · {new Date(item.entryDate).toLocaleDateString("pt-BR")}</p></div>
+                <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-sm font-semibold text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">{item.quantity} un.</span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-200 pt-3 text-sm dark:border-zinc-700">
+                <div><dt className="text-gray-600 dark:text-gray-300">Custo unitário</dt><dd className="font-medium tabular-nums">{formatCurrency(item.realCostUnit)}</dd></div>
+                <div><dt className="text-gray-600 dark:text-gray-300">Preço de venda</dt><dd className="font-medium tabular-nums">{formatCurrency(item.salePrice)}</dd></div>
+              </dl>
+              {(role === "tesoureiro" || role === "coordenador") && <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setDispatchItemData(item); setDispatchQty(1); setIsDispatchOpen(true); }} className="min-h-11 rounded-lg bg-indigo-700 px-4 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-indigo-600">Registrar saída</button>
+                <button type="button" onClick={() => void handleInventoryDelete(item)} className="min-h-11 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 focus-visible:outline-2 focus-visible:outline-red-700 dark:border-red-800 dark:text-red-300">{role === "tesoureiro" ? "Excluir lote" : "Solicitar exclusão"}</button>
+              </div>}
+            </article>
+          ))}
+        </div>
+        <div className="hidden bg-transparent border-t border-gray-200 dark:border-[#1e2023] pt-8 mt-8 overflow-x-auto w-full md:block">
           <Table className="w-full min-w-[900px]">
             <TableHeader className="border-b border-gray-200 dark:border-[#1e2023]">
               <TableRow className="border-none hover:bg-transparent">
@@ -322,31 +343,18 @@ export default function EstoquePage() {
                               setDispatchQty(1);
                               setIsDispatchOpen(true);
                             }}
-                            className="p-2 transition-colors text-indigo-400 hover:text-indigo-500"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-indigo-700 transition-colors hover:text-indigo-800 focus-visible:outline-2 focus-visible:outline-indigo-600 dark:text-indigo-300"
                             title="Dar Baixa (Saída)"
+                            aria-label={`Registrar saída de ${item.name}`}
                           >
                             <PackageMinus className="w-4 h-4" />
                           </button>
 
                           <button 
-                            onClick={async () => {
-                              if (role === "tesoureiro") {
-                                if (confirm("Excluir definitivamente este lote?")) deleteItem(item.id);
-                              } else {
-                                const reason = prompt("Justificativa para solicitar exclusão deste item:");
-                                if (reason) {
-                                  await createRequest({
-                                    collection: "estoque",
-                                    itemId: item.id,
-                                    itemNameOrDesc: `Estoque: ${item.name} (${item.quantity}un) - Motivo: ${reason}`,
-                                    requestedByEmail: user?.email || "unknown"
-                                  });
-                                  alert("Pedido de exclusão enviado para a Tesouraria.");
-                                }
-                              }
-                            }}
-                            className={`p-2 transition-colors ${role === 'tesoureiro' ? 'text-gray-400 dark:text-[#4c4e51] hover:text-red-500' : 'text-gray-400 dark:text-[#4c4e51] hover:text-amber-500'}`}
+                            onClick={() => void handleInventoryDelete(item)}
+                            className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-indigo-600 ${role === 'tesoureiro' ? 'text-gray-600 dark:text-gray-300 hover:text-red-600' : 'text-gray-600 dark:text-gray-300 hover:text-amber-600'}`}
                             title={role === 'tesoureiro' ? "Excluir Lote" : "Solicitar Exclusão"}
+                            aria-label={role === 'tesoureiro' ? `Excluir lote ${item.name}` : `Solicitar exclusão do lote ${item.name}`}
                           >
                             {role === 'tesoureiro' ? <Trash2 className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
                           </button>
